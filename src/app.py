@@ -345,175 +345,44 @@ def main():
             e_col3.metric("Avg Confidence", f"{report.get('avg_confidence', 0.0):.0%}")
             e_col4.metric("Avg Latency", f"{report.get('avg_latency_ms', 0)} ms")
             
-            # Section A: Ground Truth Evaluation
-            st.markdown("---")
-            st.subheader("📋 Ground Truth Evaluation")
-            st.caption("10 hand-labeled messages — expected vs predicted")
-
-            per_message = per_messages[::-1]  # reverse list to show latest at top
-
-            rows_html = ""
-            for i, item in enumerate(per_message):
-                cat_match = item["category_match"]
-                pri_match = item["priority_match"]
+            st.markdown("### Message Comparison Details")
+            
+            compare_rows = []
+            mismatched_cats = set()
+            
+            for pm in per_messages:
+                msg = pm.get("message", "")
+                exp_cat = pm.get("expected_category", "")
+                pred_cat = pm.get("predicted_category", "")
+                exp_pri = pm.get("expected_priority", "")
+                pred_pri = pm.get("predicted_priority", "")
                 
-                if cat_match and pri_match:
-                    row_style = "background-color: transparent"
-                    cat_icon = "✅"
-                    pri_icon = "✅"
-                elif cat_match or pri_match:
-                    row_style = "background-color: rgba(250,200,50,0.15)"
-                    cat_icon = "✅" if cat_match else "❌"
-                    pri_icon = "✅" if pri_match else "❌"
-                else:
-                    row_style = "background-color: rgba(255,80,80,0.15)"
-                    cat_icon = "❌"
-                    pri_icon = "❌"
+                cat_ok = pm.get("category_match", False)
+                pri_ok = pm.get("priority_match", False)
                 
-                msg = item["message"][:40] + "..." if len(item["message"]) > 40 else item["message"]
+                if not cat_ok:
+                    mismatched_cats.add(exp_cat)
+                    
+                compare_rows.append({
+                    "Message": msg,
+                    "Expected Cat": exp_cat,
+                    "Predicted Cat": pred_cat,
+                    "Match": "✅ Match" if cat_ok else "❌ Mismatch",
+                    "Expected Pri": exp_pri,
+                    "Predicted Pri": pred_pri,
+                    "Match ": "✅ Match" if pri_ok else "❌ Mismatch"
+                })
                 
-                rows_html += f"""
-                <tr style="{row_style}">
-                    <td style="padding:8px;font-size:13px">{msg}</td>
-                    <td style="padding:8px;font-size:13px">{item["expected_category"]}</td>
-                    <td style="padding:8px;font-size:13px">{item["predicted_category"]}</td>
-                    <td style="padding:8px;font-size:13px;text-align:center">{cat_icon}</td>
-                    <td style="padding:8px;font-size:13px">{item["expected_priority"]}</td>
-                    <td style="padding:8px;font-size:13px">{item["predicted_priority"]}</td>
-                    <td style="padding:8px;font-size:13px;text-align:center">{pri_icon}</td>
-                    <td style="padding:8px;font-size:13px">{item.get("confidence", 0)*100:.0f}%</td>
-                </tr>
-                """
-
-            table_html = f"""
-            <table style="width:100%;border-collapse:collapse;font-family:sans-serif">
-                <thead>
-                    <tr style="border-bottom:1px solid #444">
-                        <th style="padding:8px;text-align:left;font-size:12px;
-                            color:#888">Message</th>
-                        <th style="padding:8px;text-align:left;font-size:12px;
-                            color:#888">Expected Cat</th>
-                        <th style="padding:8px;text-align:left;font-size:12px;
-                            color:#888">Predicted Cat</th>
-                        <th style="padding:8px;text-align:center;font-size:12px;
-                            color:#888">✓</th>
-                        <th style="padding:8px;text-align:left;font-size:12px;
-                            color:#888">Expected Pri</th>
-                        <th style="padding:8px;text-align:left;font-size:12px;
-                            color:#888">Predicted Pri</th>
-                        <th style="padding:8px;text-align:center;font-size:12px;
-                            color:#888">✓</th>
-                        <th style="padding:8px;text-align:left;font-size:12px;
-                            color:#888">Conf</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {rows_html}
-                </tbody>
-            </table>
-            """
-
-            st.markdown(table_html, unsafe_allow_html=True)
-
-            mismatched_cats = [
-                item["expected_category"] 
-                for item in per_message 
-                if not item["category_match"]
-            ]
-
-            if not mismatched_cats:
-                st.success("✅ All predictions matched ground truth perfectly.")
+            compare_df = pd.DataFrame(compare_rows)
+            styled_compare = compare_df.style.apply(color_compare_rows, axis=1)
+            st.dataframe(styled_compare, width="stretch", hide_index=True)
+            
+            st.markdown("### Diagnostic Information")
+            if mismatched_cats:
+                struggles_list = ", ".join(sorted(list(mismatched_cats)))
+                st.info(f"System struggles with: {struggles_list}")
             else:
-                unique_fails = list(set(mismatched_cats))
-                st.warning(f"⚠ System struggled with: {', '.join(unique_fails)}")
-
-            # Section B: All Processed Messages
-            st.markdown("---")
-            st.subheader("📨 All Processed Messages")
-            st.caption("Complete results from last pipeline run — latest first")
-
-            results_path = os.path.join("output", "results.json")
-            if os.path.exists(results_path):
-                with open(results_path, "r", encoding="utf-8") as f:
-                    all_results = json.load(f)
-                all_results = all_results[::-1]  # latest first
-            else:
-                all_results = []
-
-            if all_results:
-                processed_rows_html = ""
-                for idx, item in enumerate(all_results, 1):
-                    orig_msg = item.get("original_message", "")
-                    truncated_msg = orig_msg[:40] + "..." if len(orig_msg) > 40 else orig_msg
-                    
-                    category = item.get("category", "unclear")
-                    cat_color = {
-                        "billing": "#2980b9",
-                        "technical_support": "#27ae60",
-                        "complaint": "#c0392b",
-                        "general_question": "#d35400",
-                        "feature_request": "#8e44ad",
-                        "abuse": "#c0392b",
-                        "out_of_scope": "#7f8c8d",
-                        "unclear": "#7f8c8d"
-                    }.get(category, "#7f8c8d")
-                    
-                    cat_badge_html = f'<span style="background-color: {cat_color}33; color: {cat_color}; border: 1px solid {cat_color}66; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: bold;">{category}</span>'
-                    
-                    priority = item.get("priority", "P3")
-                    prio_formatted = {"P0": "🔴 P0", "P1": "🟠 P1", "P2": "🟡 P2", "P3": "🟢 P3"}.get(priority, priority)
-                    
-                    needs_human = item.get("needs_human", True)
-                    needs_human_str = '<span style="color:#ff4b4b;font-weight:bold">🔴 Needs Human</span>' if needs_human else '<span style="color:#2ecc71;font-weight:bold">🟢 Auto</span>'
-                    
-                    conf_pct = f"{item.get('confidence', 0)*100:.0f}%"
-                    
-                    pii_detected = item.get("pii_detected", {})
-                    pii_icon = "🛡️" if pii_detected.get("has_pii") else ""
-                    
-                    flags_data = item.get("flags", {})
-                    flag_list = []
-                    if flags_data.get("retried"):
-                        flag_list.append("retried")
-                    if flags_data.get("used_fallback"):
-                        flag_list.append("fallback")
-                    flags_str = ", ".join(flag_list)
-                    
-                    processed_rows_html += f"""
-                    <tr style="border-bottom:1px solid #333">
-                        <td style="padding:8px;font-size:13px;font-weight:bold">#{idx}</td>
-                        <td style="padding:8px;font-size:13px">{truncated_msg}</td>
-                        <td style="padding:8px;font-size:13px">{cat_badge_html}</td>
-                        <td style="padding:8px;font-size:13px">{prio_formatted}</td>
-                        <td style="padding:8px;font-size:13px">{needs_human_str}</td>
-                        <td style="padding:8px;font-size:13px">{conf_pct}</td>
-                        <td style="padding:8px;font-size:13px;text-align:center">{pii_icon}</td>
-                        <td style="padding:8px;font-size:13px;color:#888;font-style:italic">{flags_str}</td>
-                    </tr>
-                    """
-                
-                processed_table_html = f"""
-                <table style="width:100%;border-collapse:collapse;font-family:sans-serif">
-                    <thead>
-                        <tr style="border-bottom:1px solid #444">
-                            <th style="padding:8px;text-align:left;font-size:12px;color:#888;width:5%">#</th>
-                            <th style="padding:8px;text-align:left;font-size:12px;color:#888;width:35%">Message</th>
-                            <th style="padding:8px;text-align:left;font-size:12px;color:#888;width:15%">Category</th>
-                            <th style="padding:8px;text-align:left;font-size:12px;color:#888;width:10%">Priority</th>
-                            <th style="padding:8px;text-align:left;font-size:12px;color:#888;width:15%">Needs Human</th>
-                            <th style="padding:8px;text-align:left;font-size:12px;color:#888;width:8%">Conf</th>
-                            <th style="padding:8px;text-align:center;font-size:12px;color:#888;width:5%">PII</th>
-                            <th style="padding:8px;text-align:left;font-size:12px;color:#888;width:12%">Flags</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {processed_rows_html}
-                    </tbody>
-                </table>
-                """
-                st.markdown(processed_table_html, unsafe_allow_html=True)
-            else:
-                st.info("No processed messages found in output/results.json")
+                st.info("System struggles with: None! All categories matched ground truth successfully.")
         else:
             st.warning("Run src/evaluate.py first to generate evaluation data")
             st.code("python src/evaluate.py")
