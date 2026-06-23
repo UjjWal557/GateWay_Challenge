@@ -47,7 +47,9 @@ that long — no fixed delays, no wasted time.
 ## Cost + performance
 | Metric | Value |
 |---|---|
-| Avg latency per message | 1909ms |
+| Avg model latency       | ~1900ms              |
+| Latency with rate limit | ~7600ms (incl. backoff) |
+| Rate limit handling     | auto-retry, exact backoff from API response |
 | Total cost (20 messages) | $0.0020 |
 | Est. cost per 1000 messages | ~$0.10 |
 | Guardrail score | 9/9 |
